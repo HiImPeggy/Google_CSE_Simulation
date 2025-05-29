@@ -129,51 +129,55 @@ def handle_jwt():
 
 @app.route("/kms", methods=["GET", "POST"])
 def kms():
-    if(request.method == "GET"):
-        # Verify JWT
-        user_index = verify_jwt(request.headers)
-        if(user_index == -1):
-            return jsonify({"status": "error", "message": "Missing or invalid Authorization header"}), 401
-        elif(user_index == -2):
-            return jsonify({"status": "error", "message": "Invalid JWT"}), 401
+    user_index = verify_jwt(request.headers)
+    if(user_index == -1):
+        return jsonify({"status": "error", "message": "Missing or invalid Authorization header"}), 401
+    elif(user_index == -2):
+        return jsonify({"status": "error", "message": "Invalid JWT"}), 401
+    
+    data = request.get_json()
+    operation = data.get("operation")
 
-        if(user_index >= 0):
-            file_id = request.args.get("file_id")
-            key_index = find_kek(file_id)
+    if(operation == "upload"):
+        dek = data.get("dek")
+        file_id = data.get("file_id")
+        key_index = find_kek(file_id)
 
-            # Generate KEK for the user
-            if(key_index < 0):
-                keys.append({"file_id": file_id, "owner": users[user_index]['username'], "acl": [], "kek_privkey": None, "kek_pubkey": None})
-                key_index = len(keys) - 1
+        # Generate KEK for the user
+        if(key_index < 0):
+            keys.append({"file_id": file_id, "owner": users[user_index]['username'], "acl": [], "kek_privkey": None, "kek_pubkey": None})
+            key_index = len(keys) - 1
 
-                keys[key_index]['kek_privkey'] = rsa.generate_private_key(
-                    public_exponent=65537,
-                    key_size=2048,
-                )
-                keys[key_index]['kek_pubkey'] = keys[key_index]['kek_privkey'].public_key()
-            
-            # Send KEK public key to the user
-            kek_pubkey_base64 = keys[key_index]['kek_pubkey'].public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
-            ).decode().replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "").replace("\n", "")
-            print(f"{KEY_COLOR_BEG}Export KEK ({users[user_index]['username']}): {kek_pubkey_base64}{COLOR_END}")
-
-            show_keys()
-
-            return jsonify({"status": "success", "kek": kek_pubkey_base64}), 200
+            keys[key_index]['kek_privkey'] = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=2048,
+            )
+            keys[key_index]['kek_pubkey'] = keys[key_index]['kek_privkey'].public_key()
         
-        else:
-            return jsonify({"status": "error", "message": "User not found"}), 404
+        # Encrypt Dek using Kek
+        dek = base64.b64decode(dek)
+        edek = keys[key_index]['kek_pubkey'].encrypt(
+            dek,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        edek_base64 = base64.b64encode(edek).decode()
+        kek_pubkey_base64 = keys[key_index]['kek_pubkey'].public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode().replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "").replace("\n", "")
+        print(f"{KEY_COLOR_BEG}Use KEK ({users[user_index]['username']}): {kek_pubkey_base64}{COLOR_END}")
+        print(f"{KEY_COLOR_BEG}Wrapped DEK ({users[user_index]['username']}): {edek_base64}{COLOR_END}")
 
-    elif(request.method == "POST"):
-        user_index = verify_jwt(request.headers)
-        if(user_index == -1):
-            return jsonify({"status": "error", "message": "Missing or invalid Authorization header"}), 401
-        elif(user_index == -2):
-            return jsonify({"status": "error", "message": "Invalid JWT"}), 401
+        show_keys()
+
+        return jsonify({"status": "success", "edek": edek_base64}), 200
+    
         
-        data = request.get_json()
+    elif(operation == "download"):
         edek_base64 = data.get("eDek")
         file_id = data.get("file_id")
 
@@ -196,12 +200,14 @@ def kms():
                 algorithm=hashes.SHA256(),
                 label=None
             )
-            # padding=serialization.PKCS1v15()
         )
         
         dek_base64 = base64.b64encode(dek).decode()
         print(f"{KEY_COLOR_BEG}Unwrapped DEK ({users[user_index]['username']}): {dek_base64}{COLOR_END}")
         return jsonify({"status": "success", "dek": dek_base64}), 200
+    
+    else:
+        return jsonify({"status": "error", "message": "Invalid operation"}), 400
 
 @app.route("/update_acl", methods=["POST"])
 def update_acl():
