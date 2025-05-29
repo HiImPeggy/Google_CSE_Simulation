@@ -174,34 +174,78 @@ def kms():
             return jsonify({"status": "error", "message": "Invalid JWT"}), 401
         
         data = request.get_json()
-        edek_base64 = data.get("eDek")
-        file_id = data.get("file_id")
+        operation = data.get("operation")
 
-        if(not edek_base64 or not file_id):
-            return jsonify({"status": "error", "message": "No eDek or no file ID provided"}), 400
-        
-        # Kek access control (policy-based)
-        key_index = find_kek(file_id)
-        username = users[user_index]['username']
-        if(not(keys[key_index]['owner'] == username or username in keys[key_index]['acl'])):
-            return jsonify({"status": "error", "message": "invalid user to access kek"})
+        if(operation == "upload"):
+            dek = data.get("dek")
+            file_id = data.get("file_id")
+            key_index = find_kek(file_id)
 
-        # Decrypt Dek using Kek
-        edek = base64.b64decode(edek_base64)
-        # print(edek)
-        dek = keys[key_index]['kek_privkey'].decrypt(
-            edek,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
+            # Generate KEK for the user
+            if(key_index < 0):
+                keys.append({"file_id": file_id, "owner": users[user_index]['username'], "acl": [], "kek_privkey": None, "kek_pubkey": None})
+                key_index = len(keys) - 1
+
+                keys[key_index]['kek_privkey'] = rsa.generate_private_key(
+                    public_exponent=65537,
+                    key_size=2048,
+                )
+                keys[key_index]['kek_pubkey'] = keys[key_index]['kek_privkey'].public_key()
+            
+            # Encrypt Dek using Kek
+            dek = base64.b64decode(dek)
+            edek = keys[key_index]['kek_pubkey'].encrypt(
+                dek,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
             )
-            # padding=serialization.PKCS1v15()
-        )
+            edek_base64 = base64.b64encode(edek).decode()
+            kek_pubkey_base64 = keys[key_index]['kek_pubkey'].public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode().replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "").replace("\n", "")
+            print(f"{KEY_COLOR_BEG}Use KEK ({users[user_index]['username']}): {kek_pubkey_base64}{COLOR_END}")
+            print(f"{KEY_COLOR_BEG}Wrapped DEK ({users[user_index]['username']}): {edek_base64}{COLOR_END}")
+
+            show_keys()
+
+            return jsonify({"status": "success", "edek": edek_base64}), 200
         
-        dek_base64 = base64.b64encode(dek).decode()
-        print(f"{KEY_COLOR_BEG}Unwrapped DEK ({users[user_index]['username']}): {dek_base64}{COLOR_END}")
-        return jsonify({"status": "success", "dek": dek_base64}), 200
+            
+        elif(operation == "download"):
+            edek_base64 = data.get("eDek")
+            file_id = data.get("file_id")
+
+            if(not edek_base64 or not file_id):
+                return jsonify({"status": "error", "message": "No eDek or no file ID provided"}), 400
+            
+            # Kek access control (policy-based)
+            key_index = find_kek(file_id)
+            username = users[user_index]['username']
+            if(not(keys[key_index]['owner'] == username or username in keys[key_index]['acl'])):
+                return jsonify({"status": "error", "message": "invalid user to access kek"})
+
+            # Decrypt Dek using Kek
+            edek = base64.b64decode(edek_base64)
+            # print(edek)
+            dek = keys[key_index]['kek_privkey'].decrypt(
+                edek,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+            
+            dek_base64 = base64.b64encode(dek).decode()
+            print(f"{KEY_COLOR_BEG}Unwrapped DEK ({users[user_index]['username']}): {dek_base64}{COLOR_END}")
+            return jsonify({"status": "success", "dek": dek_base64}), 200
+        
+        else:
+            return jsonify({"status": "error", "message": "Invalid operation"}), 400
 
 @app.route("/update_acl", methods=["POST"])
 def update_acl():

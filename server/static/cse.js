@@ -98,22 +98,38 @@ window.onload = async function() {
         // 一個kek 一個dek 一組acl 一個owner 一個filename
         // Request key encryption key (KEK) from KMS
         // to-do: use POST request instead (more secure)
-        const kmsKekResponse = await fetch(KMS_ADDRESS + "kms" + `?file_id=${encodeURIComponent(fileId)}`, {
-            method: "GET",
+        const exportedDek = await crypto.subtle.exportKey("raw", dek_key);
+        const exportedDekArray = new Uint8Array(exportedDek);
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = buffer
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        const dekBase64 = arrayBufferToBase64(exportedDekArray);
+
+
+        const kmsWrapResponse = await fetch(KMS_ADDRESS + "kms", {
+            method: "POST",
             headers: {
                 "Authorization": `Bearer ${localStorage.getItem("jwt")}`,
-            }
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({dek: dekBase64, file_id: fileId, operation: "upload"})
         });
-        if (!kmsKekResponse.ok) {
-            alert("Failed to get KMS key");
-            return;
+        if (!kmsWrapResponse.ok) {
+            errorData = await kmsWrapResponse.json();
+            alert(`Failed to wrap DEK: ${errorData.message || "Unknown error"}`);
         }
-        const kms_key = await kmsKekResponse.json();
-        alert(`KEK: ${kms_key.kek}`)
-        // alert("KMS key received successfully");
+
+        const kmsWrapData = await kmsWrapResponse.json();
+        alert(`Wrapped DEK: ${kmsWrapData.edek}`);
 
 
-        // Decode and import the KEK (import from base64 raw key to CryptoKey object)
+
         function base64ToArrayBuffer(base64) {
             const binary = atob(base64);
             const len = binary.length;
@@ -123,35 +139,64 @@ window.onload = async function() {
             }
             return bytes.buffer;
         }
-        const kmsKekBuffer = base64ToArrayBuffer(kms_key.kek);
+        const eDekArray = base64ToArrayBuffer(kmsWrapData.edek);
+        const eDekData = new Uint8Array(eDekArray);
+        
+
+        // const kmsKekResponse = await fetch(KMS_ADDRESS + "kms" + `?file_id=${encodeURIComponent(fileId)}`, {
+        //     method: "GET",
+        //     headers: {
+        //         "Authorization": `Bearer ${localStorage.getItem("jwt")}`,
+        //     }
+        // });
+        // if (!kmsKekResponse.ok) {
+        //     alert("Failed to get KMS key");
+        //     return;
+        // }
+        // const kms_key = await kmsKekResponse.json();
+        // alert(`KEK: ${kms_key.kek}`)
+        // alert("KMS key received successfully");
 
 
-        const importedKmsKek = await crypto.subtle.importKey(
-            "spki",
-            kmsKekBuffer,
-            {   name: "RSA-OAEP",
-                hash: "SHA-256"  // Ensure the hash algorithm matches the KMS key
-            },
-            false,
-            ["encrypt"]
-        );
+        // Decode and import the KEK (import from base64 raw key to CryptoKey object)
+        // function base64ToArrayBuffer(base64) {
+        //     const binary = atob(base64);
+        //     const len = binary.length;
+        //     const bytes = new Uint8Array(len);
+        //     for (let i = 0; i < len; i++) {
+        //         bytes[i] = binary.charCodeAt(i);
+        //     }
+        //     return bytes.buffer;
+        // }
+        // const kmsKekBuffer = base64ToArrayBuffer(kms_key.kek);
+
+
+        // const importedKmsKek = await crypto.subtle.importKey(
+        //     "spki",
+        //     kmsKekBuffer,
+        //     {   name: "RSA-OAEP",
+        //         hash: "SHA-256"  // Ensure the hash algorithm matches the KMS key
+        //     },
+        //     false,
+        //     ["encrypt"]
+        // );
 
         // Encrypt the exportedKey with the KMS key
-        const exportedDek = await crypto.subtle.exportKey("raw", dek_key);
-        const encryptedExportedDek = await crypto.subtle.encrypt(
-            { name: "RSA-OAEP" },
-            importedKmsKek,
-            exportedDek
-        );
-        const exportedEDek = new Uint8Array(encryptedExportedDek);
+        // const exportedDek = await crypto.subtle.exportKey("raw", dek_key);
+        // const encryptedExportedDek = await crypto.subtle.encrypt(
+        //     { name: "RSA-OAEP" },
+        //     importedKmsKek,
+        //     exportedDek
+        // );
+        // const exportedEDek = new Uint8Array(encryptedExportedDek);
         
-        alert(`IV: ${btoa(String.fromCharCode(...iv))}`);
-        alert(`Encrypted DEK: ${btoa(String.fromCharCode(...exportedEDek))}`);
+        // alert(`IV: ${btoa(String.fromCharCode(...iv))}`);
+        // alert(`Encrypted DEK: ${btoa(String.fromCharCode(...exportedEDek))}`);
 
         // Prepare the encrypted file for upload
         const formData = new FormData();
 
-        const encryptedBlob = new Blob([iv, exportedEDek, encryptedFile], { type: "application/octet-stream" });
+        const encryptedBlob = new Blob([iv, eDekData, encryptedFile], { type: "application/octet-stream" });
         formData.append("file", encryptedBlob, `${file.name}.enc`);
 
 
@@ -257,7 +302,7 @@ window.onload = async function() {
                     "Authorization": `Bearer ${localStorage.getItem("jwt")}`,
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify({eDek: (encryptedEDekBase64), file_id: fileId})
+                body: JSON.stringify({eDek: (encryptedEDekBase64), file_id: fileId, operation: "download"})
             });
             if (!kmsKEkResponse.ok) {
                 alert("Not having permission to access Kek");
