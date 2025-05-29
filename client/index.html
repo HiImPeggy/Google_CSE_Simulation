@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head><title>WebCrypto Upload</title></head>
+<body>
+  <input type="text" id="data" placeholder="Enter data">
+  <button onclick="encryptAndSend()">Encrypt & Send</button>
+
+  <script>
+    async function encryptAndSend() {
+      const text = document.getElementById("data").value;
+      const enc = new TextEncoder();
+      const key = await crypto.subtle.generateKey({name: "AES-GCM", length: 256}, true, ["encrypt"]);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ciphertext = await crypto.subtle.encrypt({name: "AES-GCM", iv}, key, enc.encode(text));
+
+      fetch("http://localhost:5000/upload", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          user_id: "alice",
+          encrypted_data: btoa(String.fromCharCode(...new Uint8Array(ciphertext))),
+          iv: btoa(String.fromCharCode(...iv))
+        })
+      });
+    }
+  </script>
+</body>
+</html>

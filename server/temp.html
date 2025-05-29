@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Client-side Encryption Upload</title>
+</head>
+<body>
+  <h1>加密上傳檔案</h1>
+  <input type="file" id="fileInput">
+  <button id="uploadBtn">加密後上傳</button>
+
+  <script>
+    const serverUrl = 'https://your-server.com/upload'; // 改成你的 API
+
+    async function generateKey() {
+      return crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function encryptData(key, dataBuffer) {
+      const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
+      const encrypted = await crypto.subtle.encrypt(
+        {
+          name: "AES-GCM",
+          iv: iv
+        },
+        key,
+        dataBuffer
+      );
+      return { encrypted, iv };
+    }
+
+    document.getElementById('uploadBtn').onclick = async () => {
+      const file = document.getElementById('fileInput').files[0];
+      if (!file) {
+        alert("請選擇檔案！");
+        return;
+      }
+
+      const key = await generateKey();
+      const fileBuffer = await file.arrayBuffer();
+      const { encrypted, iv } = await encryptData(key, fileBuffer);
+
+      // 假設你把 key 封裝或用其他方式從 KMS 取得
+      // 這裡直接導出 key（範例用）
+      const exportedKey = await crypto.subtle.exportKey("raw", key);
+
+      // 構造 formData 送到 server
+      const formData = new FormData();
+      formData.append("file", new Blob([encrypted]), file.name + ".enc");
+      formData.append("iv", new Blob([iv]));
+      formData.append("key", new Blob([exportedKey])); // 實際上應該安全傳遞！
+
+      // 傳送到伺服器
+      await fetch(serverUrl, {
+        method: "POST",
+        body: formData,
+      });
+
+      alert("加密並上傳成功！");
+    };
+  </script>
+</body>
+</html>
