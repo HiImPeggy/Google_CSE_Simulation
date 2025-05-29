@@ -143,56 +143,6 @@ window.onload = async function() {
         const eDekData = new Uint8Array(eDekArray);
         
 
-        // const kmsKekResponse = await fetch(KMS_ADDRESS + "kms" + `?file_id=${encodeURIComponent(fileId)}`, {
-        //     method: "GET",
-        //     headers: {
-        //         "Authorization": `Bearer ${localStorage.getItem("jwt")}`,
-        //     }
-        // });
-        // if (!kmsKekResponse.ok) {
-        //     alert("Failed to get KMS key");
-        //     return;
-        // }
-        // const kms_key = await kmsKekResponse.json();
-        // alert(`KEK: ${kms_key.kek}`)
-        // alert("KMS key received successfully");
-
-
-        // Decode and import the KEK (import from base64 raw key to CryptoKey object)
-        // function base64ToArrayBuffer(base64) {
-        //     const binary = atob(base64);
-        //     const len = binary.length;
-        //     const bytes = new Uint8Array(len);
-        //     for (let i = 0; i < len; i++) {
-        //         bytes[i] = binary.charCodeAt(i);
-        //     }
-        //     return bytes.buffer;
-        // }
-        // const kmsKekBuffer = base64ToArrayBuffer(kms_key.kek);
-
-
-        // const importedKmsKek = await crypto.subtle.importKey(
-        //     "spki",
-        //     kmsKekBuffer,
-        //     {   name: "RSA-OAEP",
-        //         hash: "SHA-256"  // Ensure the hash algorithm matches the KMS key
-        //     },
-        //     false,
-        //     ["encrypt"]
-        // );
-
-        // Encrypt the exportedKey with the KMS key
-        // const exportedDek = await crypto.subtle.exportKey("raw", dek_key);
-        // const encryptedExportedDek = await crypto.subtle.encrypt(
-        //     { name: "RSA-OAEP" },
-        //     importedKmsKek,
-        //     exportedDek
-        // );
-        // const exportedEDek = new Uint8Array(encryptedExportedDek);
-        
-        // alert(`IV: ${btoa(String.fromCharCode(...iv))}`);
-        // alert(`Encrypted DEK: ${btoa(String.fromCharCode(...exportedEDek))}`);
-
         // Prepare the encrypted file for upload
         const formData = new FormData();
 
