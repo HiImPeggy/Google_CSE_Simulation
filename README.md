@@ -14,5 +14,6 @@ mkcert -install
 First, cd ~/crypto_final/Google_CSE_Simulation/server
 Then, use ```mkcert 127.0.0.1 localhost <your-host-only-ip>`` to generate .pem file.``` to generate certificates. (note that host-only ip should be 192.168.56.X)
 For example, ```mkcert 127.0.0.1 localhost 192.168.56.103```
+If you only want to test localhost, just type ```mkcert 127.0.0.1 localhost```
 And you will get two .pem file, in this case is **127.0.0.1+2.pem** and **127.0.0.1+2-key.pem**
 You can use ``` openssl x509 -in 127.0.0.1+2.pem -text -noout | grep DNS ``` to check if the host-only-ip and localhost ip exist or not.
