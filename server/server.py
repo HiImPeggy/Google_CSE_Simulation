@@ -5,6 +5,10 @@ import os, sys, datetime
 import jwt
 from cryptography.hazmat.primitives import serialization
 import uuid
+import qrcode
+import io
+import base64
+import pyotp
 
 app = Flask(__name__)
 
@@ -20,15 +24,10 @@ COLOR_END = "\033[0m"
 users = None
 files = None
 if(len(sys.argv) >= 2 and sys.argv[1] == "test"):
-    users = []
-    users.append({"username": "test1",
-                "password": "test1",
-                "token": ""})
-    
-    users.append({"username": "test2",
-                "password": "test2",
-                "token": ""})
-    
+    users = [
+        {"username": "test1", "password": "test1", "totp_secret": None, "token": ""},
+        {"username": "test2", "password": "test2", "totp_secret": None, "token": ""}
+    ]
     files = []
 else:
     # test without docker (without db)
@@ -126,34 +125,69 @@ def show_files():
             print(f"{DB_COLOR_BEG}Filename: {file['filename']}, Owner: {file['owner']}, Valid Users: {file['valid_user']}, Timestamp: {file['timestamp']}{COLOR_END}")
     return
 
-
+def generate_qr_code(username, totp_secret):
+    totp = pyotp.TOTP(totp_secret)
+    uri = totp.provisioning_uri(name=username, issuer_name='FinalProject')
+    qr = qrcode.QRCode()
+    qr.add_data(uri)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode()
 
 
 @app.route("/")
-@app.route("/index.html")
-def server_index():
-    return send_file("index.html")
 
-
-@app.route("/login", methods=["POST"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    # to-do: 2FA
-    # Authenticate the user with password and 2FA
+    if request.method == "GET":
+        print(f"{LOG_COLOR_BEG}Received GET request, returning login.html{COLOR_END}")
+        return send_file("login.html")
+
     username = request.form.get("username")
     password = request.form.get("password")
+    otp = request.form.get("otp", "")
+
+    print(f"{LOG_COLOR_BEG}Received login request: username = {username}, password = {password}, otp = {otp}{COLOR_END}")
 
     # Find and authenticate user
-    if(len(sys.argv) >= 2 and sys.argv[1] == "test"):
-        user_index = find_user(username)
-        if(user_index < 0):
-            return jsonify({"status": "error", "message": "Invalid username"}), 401
-        
-        if(users[user_index]['password'] != password):
-            return jsonify({"status": "error", "message": "Wrong password!"}), 401
+    user_index = find_user(username)
+    if user_index == -1:
+        print(f"{ALERT_COLOR_BEG}Username {username} does not exist, returning error{COLOR_END}")
+        return jsonify({"status": "error", "message": "Invalid username"}), 401
+
+    if len(sys.argv) >= 2 and sys.argv[1] == "test":
+        user = users[user_index]
+        if user['password'] != password:
+            print(f"{ALERT_COLOR_BEG}Password error, returning error{COLOR_END}")
+            return jsonify({"status": "error", "message": "Password error!"}), 401
     else:
-        # to-do: generate jwt, send it to kms
-        user = users.find_one({"username": username, "password": password})
-    
+        user = user_index
+        if user['password'] != password:
+            print(f"{ALERT_COLOR_BEG}Password error, returning error{COLOR_END}")
+            return jsonify({"status": "error", "message": "Password error!"}), 401
+
+    # Check or generate TOTP secret
+    totp_secret = user.get("totp_secret")
+    print(f"{LOG_COLOR_BEG}Checking TOTP secret: totp_secret={totp_secret}{COLOR_END}")
+
+    if not totp_secret:
+        print(f"{LOG_COLOR_BEG}TOTP secret does not exist, generating new TOTP secret{COLOR_END}")
+        totp_secret = pyotp.random_base32()
+        if len(sys.argv) >= 2 and sys.argv[1] == "test":
+            users[user_index]["totp_secret"] = totp_secret
+        else:
+            users.update_one({"username": username}, {"$set": {"totp_secret": totp_secret}})
+        qr_code = generate_qr_code(username, totp_secret)
+        print(f"{LOG_COLOR_BEG}Generated QR Code{COLOR_END}")
+        return jsonify({"status": "qrcode", "qrcode": qr_code, "message": "Please scan this QR Code with Google Authenticator to set up 2FA"})
+
+    # Verify OTP if provided
+    totp = pyotp.TOTP(totp_secret)
+    if not otp.strip():
+        return jsonify({"status": "error", "message": "Please enter the OTP provided by Google Authenticator"}), 401
+    if not totp.verify(otp):
+        return jsonify({"status": "error", "message": "Invalid OTP, please confirm the code in Google Authenticator is correct"}), 401
 
     # Generate a JWT token for the user
     # to-do: generate public, private key pair for signing jwt
