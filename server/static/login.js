@@ -28,7 +28,7 @@ document.getElementById("loginForm").onsubmit = async function(event) {
             document.getElementById("otp").focus(); // Focus on OTP field
             setTimeout(() => {
                 window.location.reload();
-            }, 6000); // Reload page
+            }, 60000); // Reload page
         } else {
             alert(data.message || "Login failed");
         }

@@ -142,6 +142,7 @@ window.onload = async function() {
         }
         const eDekArray = base64ToArrayBuffer(kmsWrapData.edek);
         const eDekData = new Uint8Array(eDekArray);
+        alert(`Encrypted DEK length: ${eDekData.byteLength}`);
         
 
         // Prepare the encrypted file for upload
@@ -230,10 +231,10 @@ window.onload = async function() {
             const blobArrayBuffer = await blob.arrayBuffer()
             const blobData = new Uint8Array(blobArrayBuffer);
             const iv = blobData.slice(0, 12);
-            const encryptedEDek = blobData.slice(12, 12+256);
-            const encryptedFile = blobData.slice(12+256);
+            const encryptedEDek = blobData.slice(12, 12+48);
+            const encryptedFile = blobData.slice(12+48);
             alert(`IV: ${btoa(String.fromCharCode(...iv))}`);
-            alert(`Encrypted DEK: ${btoa(String.fromCharCode(...encryptedEDek))}`);
+            // alert(`Encrypted DEK: ${btoa(String.fromCharCode(...encryptedEDek))}`);
             
             // Send eDek to KMS to unwrap it
             function arrayBufferToBase64(buffer) {
@@ -244,8 +245,9 @@ window.onload = async function() {
                 }
                 return btoa(binary);
             }
-            // alert(`Encrypted DEK length: ${encryptedEDek.byteLength}`);
             const encryptedEDekBase64 = arrayBufferToBase64(encryptedEDek);
+            alert(`Encrypted DEK length: ${encryptedEDek.byteLength}`);
+            alert(`Encrypted DEK Base64: ${encryptedEDekBase64}`);
 
             const kmsKEkResponse = await fetch(KMS_ADDRESS + "kms", {
                 method: "POST",
